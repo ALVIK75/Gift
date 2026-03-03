@@ -185,13 +185,13 @@ def main():
             pass
 
         rarity_score = 0.0
-        for rarity_value in (model_rarity, backdrop_rarity, symbol_rarity):
+        for rarity_value in (model_rarity, symbol_rarity):
             try:
                 rarity_num = float(rarity_value)
             except (ValueError, TypeError):
                 rarity_num = 0.0
             if rarity_num > 0:
-                rarity_score += 1.0 / rarity_num
+                rarity_score += 1.0 / (rarity_num ** 0.5)
 
         if rarity_score == 0 or price_ton is None:
             continue
