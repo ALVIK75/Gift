@@ -276,7 +276,7 @@ def main():
     for item in analyzed:
         base_fair_ratio = item["base_fair_ratio"]
         if item.get("backdropName") in premium_backdrops:
-            item["fair_ratio"] = base_fair_ratio / premium_multiplier
+            item["fair_ratio"] = base_fair_ratio / math.sqrt(premium_multiplier)
         else:
             item["fair_ratio"] = base_fair_ratio
 
