@@ -102,6 +102,22 @@ def median(values):
     return statistics.median(values)
 
 
+def build_cluster(listings, top_n):
+    prices = [item["price_TON"] for item in listings if item.get("price_TON") is not None]
+    fair_ratios = [item["fair_ratio"] for item in listings if item.get("fair_ratio") is not None]
+    cluster_top = sorted(
+        [item for item in listings if item.get("fair_ratio") is not None],
+        key=lambda x: x["fair_ratio"],
+    )[:top_n]
+    return {
+        "count": len(listings),
+        "floor_TON": min(prices) if prices else None,
+        "median_TON": median(prices),
+        "average_fair_ratio": (sum(fair_ratios) / len(fair_ratios)) if fair_ratios else None,
+        "top_undervalued": cluster_top,
+    }
+
+
 def main():
     token = os.getenv("MRKT_ACCESS_TOKEN") or os.getenv("ACCESS_TOKEN")
     if not token:
@@ -185,6 +201,7 @@ def main():
         analyzed.append(
             {
                 "id": listing_id,
+                "backdropName": backdrop_name,
                 "price_TON": price_ton,
                 "rarity_score": rarity_score,
                 "fair_ratio": fair_ratio,
@@ -228,8 +245,24 @@ def main():
         key=lambda x: (x["average_price_TON"] is None, -(x["average_price_TON"] or 0)),
     )
 
+    collection_median_price = median(prices)
+    premium_backdrops = set()
+    if collection_median_price is not None:
+        threshold = 2 * collection_median_price
+        for entry in backdrop_analysis:
+            backdrop_median = entry.get("median_price_TON")
+            if backdrop_median is not None and backdrop_median > threshold:
+                premium_backdrops.add(entry["backdrop"])
+
+    premium_cluster_listings = [item for item in analyzed if item.get("backdropName") in premium_backdrops]
+    regular_cluster_listings = [item for item in analyzed if item.get("backdropName") not in premium_backdrops]
+
     output = {
         "collection": "Instant Ramen",
+        "collection_median_price": collection_median_price,
+        "premium_backdrops": sorted(premium_backdrops),
+        "premium_cluster": build_cluster(premium_cluster_listings, top_n=10),
+        "regular_cluster": build_cluster(regular_cluster_listings, top_n=10),
         "total_listings": len(combined),
         "average_fair_ratio": avg_fair_ratio,
         "floor_TON": floor,
