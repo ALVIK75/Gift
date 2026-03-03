@@ -101,6 +101,8 @@ def median(values):
 def main():
     token = os.getenv("MRKT_ACCESS_TOKEN") or os.getenv("ACCESS_TOKEN")
     if not token:
+        print("Total listings fetched: 0", file=sys.stderr)
+        print("Number of collections found: 0", file=sys.stderr)
         print(
             json.dumps(
                 {
@@ -189,8 +191,11 @@ def main():
         )
 
     if not details:
+        print(f"Number of collections found: 0", file=sys.stderr)
         print(json.dumps({"error": "No active listings found.", "wait": True}, ensure_ascii=False))
         return 1
+
+    print(f"Number of collections found: {len(grouped)}", file=sys.stderr)
 
     eligible = [x for x in details if x["active_listings"] >= 200]
     ranked_source = eligible if eligible else details
