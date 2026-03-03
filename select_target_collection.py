@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import math
 import os
 import statistics
 import sys
@@ -184,14 +185,18 @@ def main():
         except (ValueError, TypeError):
             pass
 
-        rarity_score = 0.0
-        for rarity_value in (model_rarity, symbol_rarity):
+        def safe_rarity(raw_value):
             try:
-                rarity_num = float(rarity_value)
+                rarity_num = float(raw_value)
             except (ValueError, TypeError):
                 rarity_num = 0.0
-            if rarity_num > 0:
-                rarity_score += 1.0 / (rarity_num ** 0.5)
+            if rarity_num <= 0:
+                rarity_num = 1.0
+            return rarity_num
+
+        model_component = 1.0 / math.sqrt(safe_rarity(model_rarity))
+        symbol_component = 1.0 / math.sqrt(safe_rarity(symbol_rarity))
+        rarity_score = model_component + symbol_component
 
         if rarity_score == 0 or price_ton is None:
             continue
@@ -204,6 +209,7 @@ def main():
                 "backdropName": backdrop_name,
                 "price_TON": price_ton,
                 "rarity_score": rarity_score,
+                "base_fair_ratio": fair_ratio,
                 "fair_ratio": fair_ratio,
                 "modelRarityPerMille": model_rarity,
                 "backdropRarityPerMille": backdrop_rarity,
@@ -219,9 +225,6 @@ def main():
     print("Number of collections found: 1", file=sys.stderr)
 
     floor = min(prices) if prices else None
-    fair_ratios = [x["fair_ratio"] for x in analyzed]
-    avg_fair_ratio = (sum(fair_ratios) / len(fair_ratios)) if fair_ratios else None
-    top_undervalued = sorted(analyzed, key=lambda x: x["fair_ratio"])[:15]
 
     backdrop_analysis = []
     for backdrop_name, values in backdrop_groups.items():
@@ -254,12 +257,41 @@ def main():
             if backdrop_median is not None and backdrop_median > threshold:
                 premium_backdrops.add(entry["backdrop"])
 
+    black_median = None
+    for entry in backdrop_analysis:
+        if entry.get("backdrop") == "Black":
+            black_median = entry.get("median_price_TON")
+            break
+
+    premium_multiplier = 1.0
+    if (
+        collection_median_price is not None
+        and black_median is not None
+        and collection_median_price > 0
+        and black_median > collection_median_price
+    ):
+        premium_multiplier = 1.0 + math.log(black_median / collection_median_price)
+        premium_multiplier = min(premium_multiplier, 3.5)
+
+    for item in analyzed:
+        base_fair_ratio = item["base_fair_ratio"]
+        if item.get("backdropName") in premium_backdrops:
+            item["fair_ratio"] = base_fair_ratio / premium_multiplier
+        else:
+            item["fair_ratio"] = base_fair_ratio
+
+    fair_ratios = [x["fair_ratio"] for x in analyzed]
+    avg_fair_ratio = (sum(fair_ratios) / len(fair_ratios)) if fair_ratios else None
+    top_undervalued = sorted(analyzed, key=lambda x: x["fair_ratio"])[:15]
+
     premium_cluster_listings = [item for item in analyzed if item.get("backdropName") in premium_backdrops]
     regular_cluster_listings = [item for item in analyzed if item.get("backdropName") not in premium_backdrops]
 
     output = {
         "collection": "Instant Ramen",
+        "premium_multiplier": premium_multiplier,
         "collection_median_price": collection_median_price,
+        "black_median": black_median,
         "premium_backdrops": sorted(premium_backdrops),
         "premium_cluster": build_cluster(premium_cluster_listings, top_n=10),
         "regular_cluster": build_cluster(regular_cluster_listings, top_n=10),
