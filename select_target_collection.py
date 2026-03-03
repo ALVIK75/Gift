@@ -145,6 +145,7 @@ def main():
 
     analyzed = []
     prices = []
+    backdrop_groups = {}
 
     for item in combined:
         listing_id = get_field(item, ["id", "listingId", "listing_id"], None)
@@ -156,6 +157,16 @@ def main():
         model_rarity = get_field(item, ["modelRarityPerMille"], None)
         backdrop_rarity = get_field(item, ["backdropRarityPerMille"], None)
         symbol_rarity = get_field(item, ["symbolRarityPerMille"], None)
+
+        backdrop_name = str(get_field(item, ["backdropName", "backdrop", "backdrop_name"], "unknown"))
+        group = backdrop_groups.setdefault(backdrop_name, {"prices": [], "rarities": []})
+        if price_ton is not None:
+            group["prices"].append(price_ton)
+        try:
+            rarity_value = float(backdrop_rarity)
+            group["rarities"].append(rarity_value)
+        except (ValueError, TypeError):
+            pass
 
         rarity_score = 0.0
         for rarity_value in (model_rarity, backdrop_rarity, symbol_rarity):
@@ -195,12 +206,35 @@ def main():
     avg_fair_ratio = (sum(fair_ratios) / len(fair_ratios)) if fair_ratios else None
     top_undervalued = sorted(analyzed, key=lambda x: x["fair_ratio"])[:15]
 
+    backdrop_analysis = []
+    for backdrop_name, values in backdrop_groups.items():
+        group_prices = sorted(values["prices"])
+        avg_price = (sum(group_prices) / len(group_prices)) if group_prices else None
+        avg_backdrop_rarity = (sum(values["rarities"]) / len(values["rarities"])) if values["rarities"] else None
+        backdrop_analysis.append(
+            {
+                "backdrop": backdrop_name,
+                "count": len(group_prices),
+                "average_price_TON": avg_price,
+                "median_price_TON": median(group_prices),
+                "floor_TON": group_prices[0] if group_prices else None,
+                "max_TON": group_prices[-1] if group_prices else None,
+                "average_backdropRarityPerMille": avg_backdrop_rarity,
+            }
+        )
+
+    backdrop_analysis = sorted(
+        backdrop_analysis,
+        key=lambda x: (x["average_price_TON"] is None, -(x["average_price_TON"] or 0)),
+    )
+
     output = {
         "collection": "Instant Ramen",
         "total_listings": len(combined),
         "average_fair_ratio": avg_fair_ratio,
         "floor_TON": floor,
         "top_undervalued": top_undervalued,
+        "backdrop_analysis": backdrop_analysis,
     }
     print(json.dumps(output, ensure_ascii=False, indent=2))
     return 0
