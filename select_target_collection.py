@@ -8,12 +8,11 @@ import urllib.request
 
 API_URL = "https://api.tgmrkt.io/api/v1/gifts/saling"
 PAGE_SIZE = 50
-MIN_FETCH = 500
 
 
 def post_page(token: str, cursor: str):
     payload = {
-        "collectionNames": [],
+        "collectionNames": ["Instant Ramen"],
         "modelNames": [],
         "backdropNames": [],
         "symbolNames": [],
@@ -138,79 +137,70 @@ def main():
             break
 
         combined.extend(listings)
-        if len(combined) >= MIN_FETCH:
-            break
         if not next_cursor or next_cursor == cursor:
             break
         cursor = next_cursor
 
     print(f"Total listings fetched: {len(combined)}", file=sys.stderr)
 
-    grouped = {}
+    analyzed = []
+    prices = []
+
     for item in combined:
-        collection_id = get_field(
-            item,
-            ["collectionId", "collection_id", "collection", "collectionSlug", "collectionName"],
-            "unknown",
-        )
-        collection_name = get_field(
-            item,
-            ["collectionName", "collection_name", "collectionTitle", "collection"],
-            str(collection_id),
-        )
         listing_id = get_field(item, ["id", "listingId", "listing_id"], None)
         sale_price = get_field(item, ["salePrice", "price", "priceNano", "sale_price"], None)
         price_ton = to_ton(sale_price)
-
-        grouped.setdefault(str(collection_id), {"name": collection_name, "prices": [], "listings": []})
         if price_ton is not None:
-            grouped[str(collection_id)]["prices"].append(price_ton)
-        grouped[str(collection_id)]["listings"].append({"id": listing_id, "price_TON": price_ton})
+            prices.append(price_ton)
 
-    summary = []
-    details = []
+        model_rarity = get_field(item, ["modelRarityPerMille"], None)
+        backdrop_rarity = get_field(item, ["backdropRarityPerMille"], None)
+        symbol_rarity = get_field(item, ["symbolRarityPerMille"], None)
 
-    for cid, info in grouped.items():
-        count = len(info["listings"])
-        prices = sorted([p for p in info["prices"] if p is not None])
-        floor = prices[0] if prices else None
-        med = median(prices)
-        max_price = prices[-1] if prices else None
+        rarity_score = 0.0
+        for rarity_value in (model_rarity, backdrop_rarity, symbol_rarity):
+            try:
+                rarity_num = float(rarity_value)
+            except (ValueError, TypeError):
+                rarity_num = 0.0
+            if rarity_num > 0:
+                rarity_score += 1.0 / rarity_num
 
-        summary.append(
+        if rarity_score == 0 or price_ton is None:
+            continue
+
+        fair_ratio = price_ton / rarity_score
+
+        analyzed.append(
             {
-                "collection_id": cid,
-                "collection_name": info["name"],
-                "active_listings": count,
+                "id": listing_id,
+                "price_TON": price_ton,
+                "rarity_score": rarity_score,
+                "fair_ratio": fair_ratio,
+                "modelRarityPerMille": model_rarity,
+                "backdropRarityPerMille": backdrop_rarity,
+                "symbolRarityPerMille": symbol_rarity,
             }
         )
-        details.append(
-            {
-                "collection_id": cid,
-                "collection_name": info["name"],
-                "active_listings": count,
-                "floor_TON": floor,
-                "median_TON": med,
-                "max_TON": max_price,
-            }
-        )
 
-    if not details:
-        print(f"Number of collections found: 0", file=sys.stderr)
+    if not combined:
+        print("Number of collections found: 0", file=sys.stderr)
         print(json.dumps({"error": "No active listings found.", "wait": True}, ensure_ascii=False))
         return 1
 
-    print(f"Number of collections found: {len(grouped)}", file=sys.stderr)
+    print("Number of collections found: 1", file=sys.stderr)
 
-    eligible = [x for x in details if x["active_listings"] >= 200]
-    ranked_source = eligible if eligible else details
-    selected = sorted(ranked_source, key=lambda x: (-x["active_listings"], x["collection_id"]))[0]
-
-    summary = sorted(summary, key=lambda x: (-x["active_listings"], x["collection_id"]))
+    floor = min(prices) if prices else None
+    fair_ratios = [x["fair_ratio"] for x in analyzed]
+    avg_fair_ratio = (sum(fair_ratios) / len(fair_ratios)) if fair_ratios else None
+    top_undervalued = sorted(analyzed, key=lambda x: x["fair_ratio"])[:15]
 
     output = {
-        "selected_collection": selected,
-        "all_collections_summary": summary,
+        "collection": "Instant Ramen",
+        "total_listings": len(combined),
+        "average_fair_ratio": avg_fair_ratio,
+        "floor_TON": floor,
+        "top_undervalued": top_undervalued,
     }
     print(json.dumps(output, ensure_ascii=False, indent=2))
     return 0
