@@ -13,10 +13,10 @@ MIN_FETCH = 500
 
 def post_page(token: str, cursor: str):
     payload = {
-        "collectionNames": None,
-        "modelNames": None,
-        "backdropNames": None,
-        "symbolNames": None,
+        "collectionNames": [],
+        "modelNames": [],
+        "backdropNames": [],
+        "symbolNames": [],
         "ordering": "Price",
         "lowToHigh": True,
         "maxPrice": None,
